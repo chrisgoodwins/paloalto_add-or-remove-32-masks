@@ -263,6 +263,7 @@ def main():
     mainkey = None
     devTree = None
     dg = None
+    successCheck = None
     if len(sys.argv) < 2:
         fwip = getfwipfqdn()
         mainkey = getkey(fwip)
