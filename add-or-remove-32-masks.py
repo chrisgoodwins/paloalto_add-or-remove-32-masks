@@ -18,6 +18,7 @@
 
 import getpass
 import sys
+import os
 import re
 import time
 from xml.etree import ElementTree as ET
@@ -264,11 +265,15 @@ def main():
     devTree = None
     dg = None
     successCheck = None
+    path = ''
     if len(sys.argv) < 2:
         fwip = getfwipfqdn()
         mainkey = getkey(fwip)
     else:
-        panConfig = ET.parse(sys.argv[1])
+        file = sys.argv[1]
+        panConfig = ET.parse(file)
+        if '/' or '\\' in file:
+            path, file = os.path.split(file)
         devTree = panConfig.getroot()
         print('\n\n\n...Device config loaded from command argument...')
     devType = getDevType(fwip, mainkey, devTree)
@@ -299,8 +304,8 @@ def main():
                 run = False
     if devTree is not None and successCheck is True:
         print('\nWriting config to file. Please hold....\n')
-        panConfig.write('EDITED_BY_SCRIPT_' + sys.argv[1])
-        print('\n\n\nYour config was saved as EDITED_BY_SCRIPT_' + sys.argv[1])
+        panConfig.write(os.path.join(path, 'EDITED_BY_SCRIPT_' + file))
+        print('\n\n\nYour config was saved as EDITED_BY_SCRIPT_' + file)
     print('\n\n\nHave a great day!!\n\n')
 
 
