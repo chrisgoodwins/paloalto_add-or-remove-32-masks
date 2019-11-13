@@ -10,7 +10,7 @@
 #
 # Requirements: requests
 #
-# Python:       Version 2
+# Python:       Version 3
 #
 ###############################################################################
 ###############################################################################
@@ -37,7 +37,7 @@ except ImportError:
 def getfwipfqdn():
     while True:
         try:
-            fwipraw = raw_input("\nPlease enter Panorama/firewall IP or FQDN: ")
+            fwipraw = input("\nPlease enter Panorama/firewall IP or FQDN: ")
             ipr = re.match(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$", fwipraw)
             fqdnr = re.match(r"(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)", fwipraw)
             if ipr:
@@ -55,7 +55,7 @@ def getfwipfqdn():
 def getuname():
     while True:
         try:
-            username = raw_input("Please enter your user name: ")  # 3 - 24 characters {3,24}
+            username = input("Please enter your user name: ")  # 3 - 24 characters {3,24}
             usernamer = re.match(r"^[a-zA-Z0-9_-]{3,24}$", username)
             if usernamer:
                 break
@@ -121,7 +121,7 @@ def getDG(fwip, mainkey, devTree):
             for dgName in dgList:
                 print('%s) %s' % (i, dgName))
                 i += 1
-            dgChoice = int(raw_input('\nChoose a number for the device-group:\n\nAnswer is: '))
+            dgChoice = int(input('\nChoose a number for the device-group:\n\nAnswer is: '))
             print('\n')
             time.sleep(1)
             reportDG = dgList[dgChoice - 1]
@@ -172,7 +172,7 @@ def getAddressObjects(fwip, mainkey, dg, devTree):
 # Pushes the API call to firewall or Panorama
 def pushAddrChanges(fwip, mainkey, dg, devTree, newAddrObjString):
     if devTree is None:
-        raw_input('\n\nPress Enter to push API calls to Panorama/firewall (or CTRL+C to kill the script)... ')
+        input('\n\nPress Enter to push API calls to Panorama/firewall (or CTRL+C to kill the script)... ')
         if dg is None:
             devURL = "https://%s/api/?type=config&action=set&xpath=/config/devices/entry/vsys/entry/address&element=%s&key=%s" % (fwip, newAddrObjString, mainkey)
         else:
@@ -181,7 +181,7 @@ def pushAddrChanges(fwip, mainkey, dg, devTree, newAddrObjString):
         tree = ET.fromstring(r.text)
         status = tree.get('status')
     else:
-        raw_input('\n\nPress Enter to push changes to Panorama/firewall config (or CTRL+C to kill the script)... ')
+        input('\n\nPress Enter to push changes to Panorama/firewall config (or CTRL+C to kill the script)... ')
         time.sleep(1)
         status = 'success'
         devURL = None
@@ -197,7 +197,7 @@ def remove32s(fwip, mainkey, dg, devTree):
         if entry.find('ip-netmask') is not None and '/32' in entry.find('ip-netmask').text:
             print(entry.get('name') + ': ' + entry.find('ip-netmask').text)
             entry.find('ip-netmask').text = entry.find('ip-netmask').text[:-3]
-            newAddrObjString = newAddrObjString + ET.tostring(entry)
+            newAddrObjString = newAddrObjString + '<entry name="%s"><ip-netmask>%s</ip-netmask></entry>' % (entry.get('name'), entry.find('ip-netmask').text)
     if newAddrObjString == '':
         time.sleep(1)
         print('\n\nThere are no address objects fitting your criteria...\n\n')
@@ -205,7 +205,7 @@ def remove32s(fwip, mainkey, dg, devTree):
         status = 'fail'
     else:
         status, devURL = pushAddrChanges(fwip, mainkey, dg, devTree, newAddrObjString)
-    return status, devTree
+    return status, devURL
 
 
 # Adds /32 to host addr objects if they don't exist, prints them to screen, returns status and API call
@@ -217,7 +217,7 @@ def add32s(fwip, mainkey, dg, devTree):
         if entry.find('ip-netmask') is not None and '/' not in entry.find('ip-netmask').text:
             print(entry.get('name') + ': ' + entry.find('ip-netmask').text)
             entry.find('ip-netmask').text = entry.find('ip-netmask').text + '/32'
-            newAddrObjString = newAddrObjString + ET.tostring(entry)
+            newAddrObjString = newAddrObjString + '<entry name="%s"><ip-netmask>%s</ip-netmask></entry>' % (entry.get('name'), entry.find('ip-netmask').text)
     if newAddrObjString == '':
         time.sleep(1)
         print('\n\nThere are no address objects fitting your criteria...\n\n')
@@ -225,27 +225,27 @@ def add32s(fwip, mainkey, dg, devTree):
         status = 'fail'
     else:
         status, devURL = pushAddrChanges(fwip, mainkey, dg, devTree, newAddrObjString)
-    return status, devTree
+    return status, devURL
 
 
 # Presents the user with the option to add or remove /32 subnet masks
 def addRemoveChoice(fwip, mainkey, dg, devTree):
     while True:
-        userChoice = raw_input('\n\nWould you like to add or remove /32 subnet masks?\n\n1) Add /32 subnet masks\n2) Remove /32 subnet masks\n\nAnswer: ')
+        userChoice = input('\n\nWould you like to add or remove /32 subnet masks?\n\n1) Add /32 subnet masks\n2) Remove /32 subnet masks\n\nAnswer: ')
         if userChoice == '1':
-            status, result = add32s(fwip, mainkey, dg, devTree)
+            status, devURL = add32s(fwip, mainkey, dg, devTree)
             break
         elif userChoice == '2':
-            status, result = remove32s(fwip, mainkey, dg, devTree)
+            status, devURL = remove32s(fwip, mainkey, dg, devTree)
             break
         else:
             print("\n\nChoose '1' or '2', try again...\n")
             time.sleep(1)
-    return status, result
+    return status, devURL
 
 
 # Checks the status from the changes that were made from API call or config change
-def checkStatus(devTree, status, result):
+def checkStatus(devTree, status, devURL):
     if status == 'success':
         if devTree is None:
             print('\n\nYour changes were successfully pushed to your PAN device')
@@ -255,7 +255,7 @@ def checkStatus(devTree, status, result):
         return status
     else:
         print('\n\nSomething went wrong while pushing your config to the firewall/Panorama\n\n')
-        print('Here is the faulty API call:\n\n' + result)
+        print('Here is the faulty API call:\n\n' + devURL)
         exit()
 
 
@@ -286,7 +286,7 @@ def main():
                 successCheck = True
             checkStatus(devTree, status, result)
             while True:
-                dgChoice = raw_input('\n\nWould you like to run this script against another device group? [Y/n]  ')
+                dgChoice = input('\n\nWould you like to run this script against another device group? [Y/n]  ')
                 if dgChoice == '' or dgChoice == 'Y' or dgChoice == 'y':
                     break
                 elif dgChoice == 'N' or dgChoice == 'n':
@@ -296,8 +296,8 @@ def main():
                     print("\n\nChoose '1' or '2', try again...\n")
                     time.sleep(1)
         else:
-            status, result = addRemoveChoice(fwip, mainkey, dg, devTree)
-            if checkStatus(devTree, status, result) == 'fail':
+            status, devURL = addRemoveChoice(fwip, mainkey, dg, devTree)
+            if checkStatus(devTree, status, devURL) == 'fail':
                 continue
             else:
                 successCheck = True
