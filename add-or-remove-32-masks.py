@@ -2,11 +2,15 @@
 #
 # Script:       add-or-remove-32-masks.py
 #
-# Author:       Chris Goodwin <cgoodwin@paloaltonetworks.com>
+# Author:       Chris Goodwin <chrisgoodwins@gmail.com>
 #
 # Description:  Standardize /32 subnet masks across all host IP address objects
 #               for a Palo Alto Networks firewall or Panorama device group. Run
 #               the script against a live device, or against at config file.
+#
+# Usage:        add-or-remove-32-masks.py
+#               or
+#               add-or-remove-32-masks.py <user-provided-config.xml>
 #
 # Requirements: requests
 #
@@ -36,49 +40,29 @@ except ImportError:
 # Prompts the user to enter the IP/FQDN of a firewall to retrieve the api key
 def getfwipfqdn():
     while True:
-        try:
-            fwipraw = input("\nPlease enter Panorama/firewall IP or FQDN: ")
-            ipr = re.match(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$", fwipraw)
-            fqdnr = re.match(r"(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)", fwipraw)
-            if ipr:
-                break
-            elif fqdnr:
-                break
-            else:
-                print("\nThere was something wrong with your entry. Please try again...\n")
-        except:
-            print("\nThere was some kind of problem entering your IP or FQDN. Please try again...\n")
+        fwipraw = input("\nPlease enter Panorama/firewall IP or FQDN: ")
+        ipr = re.match(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$", fwipraw)
+        fqdnr = re.match(r"(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)", fwipraw)
+        if ipr:
+            break
+        elif fqdnr:
+            break
+        else:
+            print("\nThere was something wrong with your entry. Please try again...\n")
     return fwipraw
 
 
-# Prompts the user to enter their username to retrieve the api key
-def getuname():
+# Prompts the user to enter a username and password
+def getCreds():
     while True:
-        try:
-            username = input("Please enter your user name: ")  # 3 - 24 characters {3,24}
-            usernamer = re.match(r"^[a-zA-Z0-9_-]{3,24}$", username)
-            if usernamer:
-                break
-            else:
-                print("\nThere was something wrong with your entry. Please try again...\n")
-        except:
-            print("\nThere was some kind of problem entering your user name. Please try again...\n")
-    return username
-
-
-# Prompts the user to enter their password to retrieve the api key
-def getpassword():
-    while True:
-        try:
+        username = input("Please enter your user name: ")
+        usernamer = re.match(r"^[\w-]{3,24}$", username)
+        if usernamer:
             password = getpass.getpass("Please enter your password: ")
-            passwordr = re.match(r"^.{5,50}$", password)  # simple validate PANOS has no password characterset restrictions
-            if passwordr:
-                break
-            else:
-                print("\nThere was something wrong with your entry. Please try again...\n")
-        except:
-            print("\nThere was some kind of problem entering your password. Please try again...\n")
-    return password
+            break
+        else:
+            print("\nThere was something wrong with your entry. Please try again...\n")
+    return username, password
 
 
 # Retrieves the user's api key
@@ -86,8 +70,7 @@ def getkey(fwip):
     while True:
         try:
             fwipgetkey = fwip
-            username = getuname()
-            password = getpassword()
+            username, password = getCreds()
             keycall = "https://%s/api/?type=keygen&user=%s&password=%s" % (fwipgetkey, username, password)
             r = requests.get(keycall, verify=False)
             tree = ET.fromstring(r.text)
@@ -97,7 +80,7 @@ def getkey(fwip):
             else:
                 print("\nYou have entered an incorrect username or password. Please try again...\n")
         except requests.exceptions.ConnectionError:
-            print("\nThere was a problem connecting to the firewall.  Please check the IP or FQDN and try again...\n")
+            print("\nThere was a problem connecting to the firewall. Please check the address and try again...\n")
             exit()
     return apikey
 
@@ -260,12 +243,7 @@ def checkStatus(devTree, status, devURL):
 
 
 def main():
-    fwip = None
-    mainkey = None
-    devTree = None
-    dg = None
-    successCheck = None
-    path = ''
+    fwip, mainkey, devTree, dg, successCheck, path = None, None, None, None, None, ''
     if len(sys.argv) < 2:
         fwip = getfwipfqdn()
         mainkey = getkey(fwip)
@@ -278,7 +256,7 @@ def main():
         print('\n\n\n...Device config loaded from command argument...')
     devType = getDevType(fwip, mainkey, devTree)
     run = True
-    while run is True:
+    while run:
         if devType == 'pano':
             dg = getDG(fwip, mainkey, devTree)
             status, result = addRemoveChoice(fwip, mainkey, dg, devTree)
