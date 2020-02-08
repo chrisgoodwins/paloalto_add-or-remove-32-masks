@@ -8,10 +8,6 @@
 #               for a Palo Alto Networks firewall or Panorama device group. Run
 #               the script against a live device, or against at config file.
 #
-# Usage:        add-or-remove-32-masks.py
-#               or
-#               add-or-remove-32-masks.py <user-provided-config.xml>
-#
 # Requirements: requests
 #
 # Python:       Version 3
@@ -31,7 +27,7 @@ try:
     from requests.packages.urllib3.exceptions import InsecureRequestWarning
     requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 except ImportError:
-    raise ValueError('requests support not available, please install module')
+    raise ValueError("requests support not available, please install module - run 'py -m pip install requests'")
 
 ###############################################################################
 ###############################################################################
@@ -40,29 +36,49 @@ except ImportError:
 # Prompts the user to enter the IP/FQDN of a firewall to retrieve the api key
 def getfwipfqdn():
     while True:
-        fwipraw = input("\nPlease enter Panorama/firewall IP or FQDN: ")
-        ipr = re.match(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$", fwipraw)
-        fqdnr = re.match(r"(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)", fwipraw)
-        if ipr:
-            break
-        elif fqdnr:
-            break
-        else:
-            print("\nThere was something wrong with your entry. Please try again...\n")
+        try:
+            fwipraw = input("\nPlease enter Panorama/firewall IP or FQDN: ")
+            ipr = re.match(r"^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$", fwipraw)
+            fqdnr = re.match(r"(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}$)", fwipraw)
+            if ipr:
+                break
+            elif fqdnr:
+                break
+            else:
+                print("\nThere was something wrong with your entry. Please try again...\n")
+        except:
+            print("\nThere was some kind of problem entering your IP or FQDN. Please try again...\n")
     return fwipraw
 
 
-# Prompts the user to enter a username and password
-def getCreds():
+# Prompts the user to enter their username to retrieve the api key
+def getuname():
     while True:
-        username = input("Please enter your user name: ")
-        usernamer = re.match(r"^[\w-]{3,24}$", username)
-        if usernamer:
+        try:
+            username = input("Please enter your user name: ")  # 3 - 24 characters {3,24}
+            usernamer = re.match(r"^[a-zA-Z0-9_-]{3,24}$", username)
+            if usernamer:
+                break
+            else:
+                print("\nThere was something wrong with your entry. Please try again...\n")
+        except:
+            print("\nThere was some kind of problem entering your user name. Please try again...\n")
+    return username
+
+
+# Prompts the user to enter their password to retrieve the api key
+def getpassword():
+    while True:
+        try:
             password = getpass.getpass("Please enter your password: ")
-            break
-        else:
-            print("\nThere was something wrong with your entry. Please try again...\n")
-    return username, password
+            passwordr = re.match(r"^.{5,50}$", password)  # simple validate PANOS has no password characterset restrictions
+            if passwordr:
+                break
+            else:
+                print("\nThere was something wrong with your entry. Please try again...\n")
+        except:
+            print("\nThere was some kind of problem entering your password. Please try again...\n")
+    return password
 
 
 # Retrieves the user's api key
@@ -70,7 +86,8 @@ def getkey(fwip):
     while True:
         try:
             fwipgetkey = fwip
-            username, password = getCreds()
+            username = getuname()
+            password = getpassword()
             keycall = "https://%s/api/?type=keygen&user=%s&password=%s" % (fwipgetkey, username, password)
             r = requests.get(keycall, verify=False)
             tree = ET.fromstring(r.text)
@@ -80,7 +97,7 @@ def getkey(fwip):
             else:
                 print("\nYou have entered an incorrect username or password. Please try again...\n")
         except requests.exceptions.ConnectionError:
-            print("\nThere was a problem connecting to the firewall. Please check the address and try again...\n")
+            print("\nThere was a problem connecting to the firewall.  Please check the IP or FQDN and try again...\n")
             exit()
     return apikey
 
@@ -152,23 +169,52 @@ def getAddressObjects(fwip, mainkey, dg, devTree):
     return addrList
 
 
-# Pushes the API call to firewall or Panorama
+# Build the API calls and split them up if they are over the 6K character limit for requests calls
+def apiCallBuilder(devURL, newAddrObjString, urlLength_WithoutElements, mainkey):
+    calls = []
+    callElems = ''
+    if urlLength_WithoutElements + len(newAddrObjString) > 6000:
+        allElements = re.sub(r'entry><entry', 'entry>::<entry', newAddrObjString).split('::')
+        print('\n\n\nYour API call exceeds the character limit of 6000, so it will need to be split into multiple calls...')
+        time.sleep(1)
+        for item in allElements:
+            if urlLength_WithoutElements + len(callElems) <= 6000:
+                callElems += item
+            else:
+                calls.append(devURL + callElems + '&key=' + mainkey)
+                callElems = item
+            if item == allElements[-1]:
+                calls.append(devURL + callElems + '&key=' + mainkey)
+    else:
+        calls.append(devURL + newAddrObjString + '&key=' + mainkey)
+    return calls
+
+
+# Push the API calls to firewall or Panorama
 def pushAddrChanges(fwip, mainkey, dg, devTree, newAddrObjString):
     if devTree is None:
-        input('\n\nPress Enter to push API calls to Panorama/firewall (or CTRL+C to kill the script)... ')
         if dg is None:
-            devURL = "https://%s/api/?type=config&action=set&xpath=/config/devices/entry/vsys/entry/address&element=%s&key=%s" % (fwip, newAddrObjString, mainkey)
+            devURL = "https://%s/api/?type=config&action=set&xpath=/config/devices/entry/vsys/entry/address&element=" % (fwip)
+            urlLength_WithoutElements = len("https://%s/api/?type=config&action=set&xpath=/config/devices/entry/vsys/entry/address&element=&key=%s" % (fwip, mainkey))
         else:
-            devURL = "https://%s/api/?type=config&action=set&xpath=/config/devices/entry/device-group/entry[@name='%s']/address&element=%s&key=%s" % (fwip, dg, newAddrObjString, mainkey)
-        r = requests.get(devURL, verify=False)
-        tree = ET.fromstring(r.text)
-        status = tree.get('status')
+            devURL = "https://%s/api/?type=config&action=set&xpath=/config/devices/entry/device-group/entry[@name='%s']/address&element=" % (fwip, dg)
+            urlLength_WithoutElements = len("https://%s/api/?type=config&action=set&xpath=/config/devices/entry/device-group/entry[@name='%s']/address&element=&key=%s" % (fwip, dg, mainkey))
+        apiCalls = apiCallBuilder(devURL, newAddrObjString, urlLength_WithoutElements, mainkey)
+        input('\n\nPress Enter to push API calls to Panorama/firewall (or CTRL+C to kill the script)... ')
+        for call in apiCalls:
+            r = requests.get(call, verify=False)
+            tree = ET.fromstring(r.text)
+            if tree.get('status') != 'success':
+                status = 'fail'
+                break
+            else:
+                status = 'success'
     else:
-        input('\n\nPress Enter to push changes to Panorama/firewall config (or CTRL+C to kill the script)... ')
+        input('\n\nPress Enter to push changes to Panorama/firewall to config (or CTRL+C to kill the script)... ')
         time.sleep(1)
         status = 'success'
         devURL = None
-    return status, devURL
+    return status, call
 
 
 # Removes /32 from hosts addr objects if they exist, prints them to screen, returns status and API call
@@ -243,7 +289,12 @@ def checkStatus(devTree, status, devURL):
 
 
 def main():
-    fwip, mainkey, devTree, dg, successCheck, path = None, None, None, None, None, ''
+    fwip = None
+    mainkey = None
+    devTree = None
+    dg = None
+    successCheck = None
+    path = ''
     if len(sys.argv) < 2:
         fwip = getfwipfqdn()
         mainkey = getkey(fwip)
@@ -256,7 +307,7 @@ def main():
         print('\n\n\n...Device config loaded from command argument...')
     devType = getDevType(fwip, mainkey, devTree)
     run = True
-    while run:
+    while run is True:
         if devType == 'pano':
             dg = getDG(fwip, mainkey, devTree)
             status, result = addRemoveChoice(fwip, mainkey, dg, devTree)
